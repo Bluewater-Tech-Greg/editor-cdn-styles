@@ -1,0 +1,102 @@
+name: Build CSS from SCSS Folders
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scss/**/*.scss"
+      - "build-order.json"
+      - ".github/workflows/build-css.yml"
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-css:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Install dependencies
+        run: |
+          npm install -g sass
+          sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Process SCSS folders with build order
+        run: |
+          # Create output directory
+          mkdir -p build
+
+          # Create temporary main SCSS file
+          echo "/* Auto-generated main SCSS file - $(date) */" > temp-main.scss
+          echo "" >> temp-main.scss
+
+          # Check if build-order.json exists
+          if [ -f "build-order.json" ]; then
+            echo "✓ Using custom build order from build-order.json"
+            
+            # Extract folder list from JSON and process in order
+            folders=$(cat build-order.json | jq -r '.folders[]')
+            
+            for folder in $folders; do
+              if [ -d "$folder" ]; then
+                echo "📁 Processing folder: $folder"
+                
+                # Add folder comment to output
+                echo "/* =================================================" >> temp-main.scss
+                echo " * Folder: $folder" >> temp-main.scss
+                echo " * ================================================= */" >> temp-main.scss
+                
+                # Find all non-partial SCSS files in this folder
+                scss_files=$(find "$folder" -name "*.scss" -not -name "_*" | sort)
+                
+                if [ -n "$scss_files" ]; then
+                  for file in $scss_files; do
+                    file_without_ext=${file%.scss}
+                    echo "  📄 Importing: $file"
+                    echo "@import '$file_without_ext';" >> temp-main.scss
+                  done
+                else
+                  echo "  ⚠️  No non-partial SCSS files found in $folder"
+                fi
+                
+                echo "" >> temp-main.scss
+              else
+                echo "❌ Warning: Folder $folder not found"
+              fi
+            done
+          else
+            echo "❌ Error: build-order.json not found!"
+            echo "Please create a build-order.json file to specify folder processing order."
+            exit 1
+          fi
+
+          echo "📝 Generated temp-main.scss:"
+          cat temp-main.scss
+
+          # Compile the combined SCSS to CSS
+          echo "🔨 Compiling SCSS to CSS..."
+          sass temp-main.scss:build/styles.css --style=compressed --source-map --embed-sources
+
+          # Create uncompressed version for debugging
+          sass temp-main.scss:build/styles.debug.css --style=expanded --source-map --embed-sources
+
+          # Clean up
+          rm temp-main.scss
+
+          echo "✅ CSS compilation complete!"
+          echo "📊 File sizes:"
+          ls -lh build/
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build
+          commit_message: "Auto-update compiled CSS from SCSS"

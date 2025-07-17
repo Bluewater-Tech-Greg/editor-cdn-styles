@@ -1,0 +1,12 @@
+{
+  "folders": [
+    "scss/01-variables",
+    "scss/02-mixins",
+    "scss/03-base",
+    "scss/04-layout",
+    "scss/05-components",
+    "scss/06-utilities",
+    "scss/07-themes",
+    "scss/08-custom"
+  ]
+}
