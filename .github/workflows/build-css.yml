@@ -57,6 +57,19 @@ jobs:
         # Extract folder list from JSON
         folders=$(cat build-order.json | jq -r '.folders[]')
         
+        # Debug: Show what folders we found
+        echo "📋 Folders to process:"
+        for folder in $folders; do
+          echo "  - $folder"
+          if [ -d "$folder" ]; then
+            echo "    Files: $(find "$folder" -name "*.scss" -not -name "_*" | wc -l) SCSS files"
+            find "$folder" -name "*.scss" -not -name "_*" | sort | sed 's/^/      /'
+          else
+            echo "    ❌ Folder not found"
+          fi
+        done
+        echo ""
+        
         # Generate index.scss files for each folder
         for folder in $folders; do
           if [ -d "$folder" ]; then
