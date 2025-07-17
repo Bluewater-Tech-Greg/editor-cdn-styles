@@ -2,11 +2,11 @@ name: Build and Deploy CSS from SCSS
 
 on:
   push:
-    branches: [ main ]
-    paths: 
-      - 'scss/**/*.scss'
-      - 'build-order.json'
-      - '.github/workflows/build-css.yml'
+    branches: [main]
+    paths:
+      - "scss/**/*.scss"
+      - "build-order.json"
+      - ".github/workflows/build-css.yml"
 
 # Required permissions for GitHub Pages deployment
 permissions:
@@ -25,158 +25,158 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    
+
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-        
-    - name: Install dependencies
-      run: |
-        npm install -g sass
-        sudo apt-get update && sudo apt-get install -y jq
-      
-    - name: Generate index files and main SCSS with @use syntax
-      run: |
-        # Create output directory
-        mkdir -p build
-        
-        # Check if build-order.json exists
-        if [ ! -f "build-order.json" ]; then
-          echo "❌ Error: build-order.json not found!"
-          echo "Please create a build-order.json file to specify folder processing order."
-          exit 1
-        fi
-        
-        echo "✓ Using custom build order from build-order.json"
-        
-        # Extract folder list from JSON
-        folders=$(cat build-order.json | jq -r '.folders[]')
-        
-        # Debug: Show what folders we found
-        echo "📋 Folders to process:"
-        for folder in $folders; do
-          echo "  - $folder"
-          if [ -d "$folder" ]; then
-            echo "    Files: $(find "$folder" -name "*.scss" -not -name "_*" | wc -l) SCSS files"
-            find "$folder" -name "*.scss" -not -name "_*" | sort | sed 's/^/      /'
-          else
-            echo "    ❌ Folder not found"
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+
+      - name: Install dependencies
+        run: |
+          npm install -g sass
+          sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Generate index files and main SCSS with @use syntax
+        run: |
+          # Create output directory
+          mkdir -p build
+
+          # Check if build-order.json exists
+          if [ ! -f "build-order.json" ]; then
+            echo "❌ Error: build-order.json not found!"
+            echo "Please create a build-order.json file to specify folder processing order."
+            exit 1
           fi
-        done
-        echo ""
-        
-        # Generate index.scss files for each folder
-        for folder in $folders; do
-          if [ -d "$folder" ]; then
-            echo "📁 Processing folder: $folder"
-            
-            # Create index.scss for this folder
-            index_file="$folder/index.scss"
-            echo "// Auto-generated index file for $folder" > "$index_file"
-            echo "// Generated on $(date)" >> "$index_file"
-            echo "" >> "$index_file"
-            
-            # Find all non-partial SCSS files in this folder
-            scss_files=$(find "$folder" -name "*.scss" -not -name "_*" -not -name "index.scss" | sort)
-            
-            if [ -n "$scss_files" ]; then
-              # Determine if this folder should use previous folders
-              folder_name=$(basename "$folder")
+
+          echo "✓ Using custom build order from build-order.json"
+
+          # Extract folder list from JSON
+          folders=$(cat build-order.json | jq -r '.folders[]')
+
+          # Debug: Show what folders we found
+          echo "📋 Folders to process:"
+          for folder in $folders; do
+            echo "  - $folder"
+            if [ -d "$folder" ]; then
+              echo "    Files: $(find "$folder" -name "*.scss" -not -name "_*" | wc -l) SCSS files"
+              find "$folder" -name "*.scss" -not -name "_*" | sort | sed 's/^/      /'
+            else
+              echo "    ❌ Folder not found"
+            fi
+          done
+          echo ""
+
+          # Generate index.scss files for each folder
+          for folder in $folders; do
+            if [ -d "$folder" ]; then
+              echo "📁 Processing folder: $folder"
               
-              # For folders after variables, use previous folders
-              if [[ ! "$folder" =~ (variable|config) ]]; then
-                # Add @use statements for previous folders
-                for prev_folder in $folders; do
-                  if [ "$prev_folder" = "$folder" ]; then
-                    break
-                  fi
-                  if [ -d "$prev_folder" ]; then
-                    # Calculate relative path
-                    rel_path=$(realpath --relative-to="$folder" "$prev_folder")
-                    echo "@use '$rel_path' as *;" >> "$index_file"
-                  fi
+              # Create index.scss for this folder
+              index_file="$folder/index.scss"
+              echo "// Auto-generated index file for $folder" > "$index_file"
+              echo "// Generated on $(date)" >> "$index_file"
+              echo "" >> "$index_file"
+              
+              # Find all non-partial SCSS files in this folder
+              scss_files=$(find "$folder" -name "*.scss" -not -name "_*" -not -name "index.scss" | sort)
+              
+              if [ -n "$scss_files" ]; then
+                # Determine if this folder should use previous folders
+                folder_name=$(basename "$folder")
+                
+                # For folders after variables, use previous folders
+                if [[ ! "$folder" =~ (variable|config) ]]; then
+                  # Add @use statements for previous folders
+                  for prev_folder in $folders; do
+                    if [ "$prev_folder" = "$folder" ]; then
+                      break
+                    fi
+                    if [ -d "$prev_folder" ]; then
+                      # Calculate relative path
+                      rel_path=$(realpath --relative-to="$folder" "$prev_folder")
+                      echo "@use '$rel_path' as *;" >> "$index_file"
+                    fi
+                  done
+                  echo "" >> "$index_file"
+                fi
+                
+                # Forward all non-partial files in this folder
+                for file in $scss_files; do
+                  # Get filename without path and extension
+                  filename=$(basename "$file" .scss)
+                  echo "  📄 Forwarding: $filename"
+                  echo "@forward '$filename';" >> "$index_file"
                 done
-                echo "" >> "$index_file"
+              else
+                echo "  ⚠️  No non-partial SCSS files found in $folder"
+                echo "// No files to forward in this folder" >> "$index_file"
               fi
               
-              # Forward all non-partial files in this folder
-              for file in $scss_files; do
-                # Get filename without path and extension
-                filename=$(basename "$file" .scss)
-                echo "  📄 Forwarding: $filename"
-                echo "@forward '$filename';" >> "$index_file"
-              done
+              echo "" >> "$index_file"
             else
-              echo "  ⚠️  No non-partial SCSS files found in $folder"
-              echo "// No files to forward in this folder" >> "$index_file"
+              echo "❌ Warning: Folder $folder not found"
             fi
-            
-            echo "" >> "$index_file"
-          else
-            echo "❌ Warning: Folder $folder not found"
-          fi
-        done
-        
-        # Create main SCSS file that uses all folders
-        echo "/* Auto-generated main SCSS file using @use syntax */" > scss/main.scss
-        echo "/* Generated on $(date) */" >> scss/main.scss
-        echo "" >> scss/main.scss
-        
-        for folder in $folders; do
-          if [ -d "$folder" ]; then
-            echo "📁 Adding $folder to main.scss"
-            
-            # Add folder comment
-            echo "/* =================================================" >> scss/main.scss
-            echo " * $folder" >> scss/main.scss
-            echo " * ================================================= */" >> scss/main.scss
-            
-            # Calculate relative path from scss/ to the folder
-            rel_path=$(realpath --relative-to="scss" "$folder")
-            
-            # Use the folder's index file
-            echo "@use '$rel_path' as *;" >> scss/main.scss
-            echo "" >> scss/main.scss
-          fi
-        done
-        
-        echo "📝 Generated main.scss:"
-        cat scss/main.scss
-        
-        echo "📝 Generated index files:"
-        find scss -name "index.scss" -exec echo "=== {} ===" \; -exec cat {} \; -exec echo "" \;
-        
-    - name: Compile SCSS to CSS
-      run: |
-        # Compile the main SCSS file to CSS
-        echo "🔨 Compiling SCSS to CSS using @use syntax..."
-        sass scss/main.scss:build/styles.css --style=compressed --source-map --embed-sources
-        
-        # Create uncompressed version for debugging
-        sass scss/main.scss:build/styles.debug.css --style=expanded --source-map --embed-sources
-        
-        echo "✅ CSS compilation complete!"
-        echo "📊 File sizes:"
-        ls -lh build/
-        
-        # Clean up generated files (optional - comment out if you want to keep them)
-        echo "🧹 Cleaning up generated files..."
-        rm -f scss/main.scss
-        find scss -name "index.scss" -delete
-        
-    - name: Setup Pages
-      uses: actions/configure-pages@v4
-      
-    - name: Upload artifact
-      uses: actions/upload-pages-artifact@v3
-      with:
-        path: './build'
-        
-    - name: Deploy to GitHub Pages
-      id: deployment
-      uses: actions/deploy-pages@v4
+          done
+
+          # Create main SCSS file that uses all folders
+          echo "/* Auto-generated main SCSS file using @use syntax */" > scss/main.scss
+          echo "/* Generated on $(date) */" >> scss/main.scss
+          echo "" >> scss/main.scss
+
+          for folder in $folders; do
+            if [ -d "$folder" ]; then
+              echo "📁 Adding $folder to main.scss"
+              
+              # Add folder comment
+              echo "/* =================================================" >> scss/main.scss
+              echo " * $folder" >> scss/main.scss
+              echo " * ================================================= */" >> scss/main.scss
+              
+              # Calculate relative path from scss/ to the folder
+              rel_path=$(realpath --relative-to="scss" "$folder")
+              
+              # Use the folder's index file
+              echo "@use '$rel_path' as *;" >> scss/main.scss
+              echo "" >> scss/main.scss
+            fi
+          done
+
+          echo "📝 Generated main.scss:"
+          cat scss/main.scss
+
+          echo "📝 Generated index files:"
+          find scss -name "index.scss" -exec echo "=== {} ===" \; -exec cat {} \; -exec echo "" \;
+
+      - name: Compile SCSS to CSS
+        run: |
+          # Compile the main SCSS file to CSS
+          echo "🔨 Compiling SCSS to CSS using @use syntax..."
+          sass scss/main.scss:build/styles.css --style=compressed --source-map --embed-sources
+
+          # Create uncompressed version for debugging
+          sass scss/main.scss:build/styles.debug.css --style=expanded --source-map --embed-sources
+
+          echo "✅ CSS compilation complete!"
+          echo "📊 File sizes:"
+          ls -lh build/
+
+          # Clean up generated files (optional - comment out if you want to keep them)
+          echo "🧹 Cleaning up generated files..."
+          rm -f scss/main.scss
+          find scss -name "index.scss" -delete
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "./build"
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
